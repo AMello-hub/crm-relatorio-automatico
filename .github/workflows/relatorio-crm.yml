@@ -1,0 +1,50 @@
+name: 📋 Relatório CRM Automático
+
+on:
+  schedule:
+    # Executa todos os dias de semana às 8:00 AM (Brasília)
+    - cron: '0 11 * * 1-5'  # UTC+0 (11:00 UTC = 8:00 Brasília)
+  
+  # Permite executar manualmente
+  workflow_dispatch:
+
+jobs:
+  gerar_relatorio:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Clonar repositório
+        uses: actions/checkout@v3
+      
+      - name: 🐍 Configurar Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: 📦 Instalar dependências
+        run: |
+          pip install requests
+          apt-get update
+          apt-get install -y wkhtmltopdf
+      
+      - name: 🚀 Executar script de geração
+        run: python scripts/gerar_relatorio_crm.py
+        env:
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          CALLMEBOT_PHONE: ${{ secrets.CALLMEBOT_PHONE }}
+          CALLMEBOT_API_KEY: ${{ secrets.CALLMEBOT_API_KEY }}
+      
+      - name: 📤 Fazer upload do relatório
+        uses: actions/upload-artifact@v3
+        with:
+          name: relatorio-crm
+          path: relatorio_crm.pdf
+          retention-days: 30
+      
+      - name: 📊 Salvar no repositório
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add relatorio_crm.* || true
+          git commit -m "📋 Relatório CRM atualizado - $(date '+%d/%m/%Y %H:%M')" || true
+          git push || true
