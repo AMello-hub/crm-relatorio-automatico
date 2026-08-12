@@ -35,7 +35,7 @@ jobs:
           CALLMEBOT_API_KEY: ${{ secrets.CALLMEBOT_API_KEY }}
       
       - name: 📤 Fazer upload do relatório
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: relatorio-crm
           path: relatorio_crm.pdf
