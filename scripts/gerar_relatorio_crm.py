@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
 Script para gerar e enviar relatório CRM do Notion para WhatsApp
-Compatível com novo token Notion (ntn_)
 """
 
 import requests
 import os
+import urllib.parse
 from datetime import datetime, timedelta
 
 # ============================================
@@ -14,16 +14,18 @@ from datetime import datetime, timedelta
 
 NOTION_TOKEN = os.environ.get("NOTION_API_KEY", "")
 NOTION_DATABASE_ID = "35427a5ac10780d599a8f851bdead6c8"
+CALLMEBOT_PHONE = os.environ.get("CALLMEBOT_PHONE", "5511968526705")
+CALLMEBOT_API_KEY = os.environ.get("CALLMEBOT_API_KEY", "7883678")
 
 print("🚀 Gerando relatório CRM com dados do Notion...")
 print(f"⏰ {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
 
 # ============================================
-# FUNÇÃO: Ler dados do Notion com novo token
+# FUNÇÃO: Ler dados do Notion
 # ============================================
 
 def ler_dados_notion():
-    """Lê dados da database Notion com novo token ntn_"""
+    """Lê dados da database Notion"""
     try:
         print("\n1️⃣ Lendo dados do Notion...")
         
@@ -40,16 +42,9 @@ def ler_dados_notion():
         
         print(f"📊 Status HTTP: {response.status_code}")
         
-        if response.status_code == 401:
-            print("❌ Erro 401: Token não autorizado ou inválido")
-            print("⚠️ Verifique o token NOTION_API_KEY no GitHub Secrets")
-            return []
-        
         if response.status_code != 200:
-            print(f"❌ Erro {response.status_code}: {response.text}")
+            print(f"❌ Erro {response.status_code}")
             return []
-        
-        response.raise_for_status()
         
         data = response.json()
         items = []
@@ -57,7 +52,6 @@ def ler_dados_notion():
         for page in data.get('results', []):
             props = page['properties']
             
-            # Extrai dados
             cliente = props.get('Cliente', {}).get('title', [])
             cliente_text = cliente[0]['text']['content'] if cliente else 'N/A'
             
@@ -82,15 +76,15 @@ def ler_dados_notion():
         return items
     
     except Exception as e:
-        print(f"❌ Erro ao ler Notion: {e}")
+        print(f"❌ Erro: {e}")
         return []
 
 # ============================================
-# FUNÇÃO: Filtrar e organizar dados
+# FUNÇÃO: Processar dados
 # ============================================
 
 def processar_dados(items):
-    """Filtra e organiza dados da semana"""
+    """Filtra dados da semana"""
     hoje = datetime.now().date()
     fim_semana = hoje + timedelta(days=7)
     
@@ -115,7 +109,7 @@ def processar_dados(items):
 # ============================================
 
 def gerar_mensagem(items):
-    """Gera mensagem formatada"""
+    """Gera mensagem"""
     
     msg = "📋 Relatório CRM - Ação Esta Semana\n\n"
     
@@ -135,22 +129,52 @@ def gerar_mensagem(items):
     return msg
 
 # ============================================
+# FUNÇÃO: Enviar WhatsApp
+# ============================================
+
+def enviar_whatsapp(mensagem):
+    """Envia para WhatsApp via CallMeBot"""
+    try:
+        print("\n5️⃣ Enviando para WhatsApp...")
+        
+        msg_encoded = urllib.parse.quote(mensagem)
+        url = f"https://api.callmebot.com/whatsapp.php?phone={CALLMEBOT_PHONE}&apikey={CALLMEBOT_API_KEY}&text={msg_encoded}"
+        
+        print(f"📱 Telefone: {CALLMEBOT_PHONE}")
+        print(f"🔗 Enviando para CallMeBot...")
+        
+        response = requests.get(url, timeout=10)
+        
+        print(f"📊 Status: {response.status_code}")
+        
+        if response.status_code == 200:
+            print("✅ Mensagem enviada com sucesso!")
+            return True
+        else:
+            print(f"⚠️ Status: {response.status_code}")
+            print(f"Resposta: {response.text[:100]}")
+            return False
+    
+    except Exception as e:
+        print(f"❌ Erro ao enviar: {e}")
+        return False
+
+# ============================================
 # MAIN
 # ============================================
 
 # Valida token
-if not NOTION_TOKEN or NOTION_TOKEN == "":
-    print("❌ ERRO: NOTION_API_KEY não configurado!")
-    print("⚠️ Adicione o token nos GitHub Secrets")
+if not NOTION_TOKEN:
+    print("❌ NOTION_API_KEY não configurado!")
     exit(1)
 
-print(f"✅ Token Notion detectado: {NOTION_TOKEN[:20]}...")
+print(f"✅ Token detectado")
 
 # Lê dados
 items = ler_dados_notion()
 
 if not items:
-    print("⚠️ Sem dados. Verifique a conexão com Notion.")
+    print("⚠️ Sem dados")
     exit(0)
 
 # Processa
@@ -165,5 +189,7 @@ print("\n" + "="*60)
 print(mensagem)
 print("="*60)
 
+# Envia WhatsApp
+enviar_whatsapp(mensagem)
+
 print("\n✅ Processo concluído!")
-print("📱 Mensagem pronta para WhatsApp")
