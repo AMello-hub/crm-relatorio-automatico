@@ -31,7 +31,7 @@ def ler_dados_notion():
         
         headers = {
             "Authorization": f"Bearer {NOTION_TOKEN}",
-            "Notion-Version": "2024-06-15",
+            "Notion-Version": "2022-06-28",
             "Content-Type": "application/json"
         }
         
