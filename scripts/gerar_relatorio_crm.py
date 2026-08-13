@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Script para gerar e enviar relatório CRM do Notion para WhatsApp
-Com formatação melhorada e agrupamento por tipo de status
+Formatação simples e funcional
 """
 
 import requests
@@ -38,7 +38,7 @@ def ler_dados_notion():
             "Content-Type": "application/json"
         }
         
-        print(f"🔗 Conectando: {NOTION_DATABASE_ID[:20]}...")
+        print(f"🔗 Conectando...")
         response = requests.post(url, headers=headers, timeout=10)
         
         print(f"📊 Status HTTP: {response.status_code}")
@@ -56,9 +56,6 @@ def ler_dados_notion():
             cliente = props.get('Cliente', {}).get('title', [])
             cliente_text = cliente[0]['text']['content'] if cliente else 'N/A'
             
-            status = props.get('Status', {}).get('select', {})
-            status_text = status.get('name', 'N/A') if status else 'N/A'
-            
             acao = props.get('Ação Específica', {}).get('rich_text', [])
             acao_text = acao[0]['text']['content'] if acao else ''
             
@@ -68,7 +65,6 @@ def ler_dados_notion():
             if fu_text:
                 items.append({
                     'cliente': cliente_text,
-                    'status': status_text,
                     'acao': acao_text,
                     'fu_date': fu_text
                 })
@@ -81,64 +77,29 @@ def ler_dados_notion():
         return []
 
 # ============================================
-# FUNÇÃO: Processar dados
+# FUNÇÃO: Processar dados (próximos 30 dias)
 # ============================================
 
 def processar_dados(items):
-    """Filtra dados da semana"""
+    """Filtra dados dos próximos 30 dias"""
     hoje = datetime.now().date()
-    fim_semana = hoje + timedelta(days=7)
+    fim_periodo = hoje + timedelta(days=30)
     
-    items_semana = []
+    items_filtrado = []
     
     for item in items:
         try:
             fu_date = datetime.strptime(item['fu_date'], '%Y-%m-%d').date()
-            if hoje <= fu_date <= fim_semana:
-                items_semana.append(item)
+            if hoje <= fu_date <= fim_periodo:
+                items_filtrado.append(item)
         except:
             pass
     
-    items_semana.sort(key=lambda x: x['fu_date'])
+    items_filtrado.sort(key=lambda x: x['fu_date'])
     
-    print(f"✅ {len(items_semana)} com Follow Up esta semana")
+    print(f"✅ {len(items_filtrado)} com Follow Up nos próximos 30 dias")
     
-    return items_semana
-
-# ============================================
-# FUNÇÃO: Organizar por status
-# ============================================
-
-def organizar_por_status(items):
-    """Organiza items por tipo de status"""
-    
-    resultado = {
-        'reuniao_enviada': [],
-        'spot_recorrente': [],
-        'somente_spot': [],
-        'lead_perdido': []
-    }
-    
-    for item in items:
-        status = item['status'].lower()
-        
-        # Categoria 1: Reunião, Envios, Follow Ups
-        if any(x in status for x in ['reunião', 'enviada', 'iniciar']):
-            resultado['reuniao_enviada'].append(item)
-        
-        # Categoria 2: Spot Atual e Recorrente
-        elif any(x in status for x in ['spot atual', 'recorrente']):
-            resultado['spot_recorrente'].append(item)
-        
-        # Categoria 3: Somente Spot
-        elif 'somente spot' in status:
-            resultado['somente_spot'].append(item)
-        
-        # Categoria 4: Lead Perdido
-        elif 'lead perdido' in status:
-            resultado['lead_perdido'].append(item)
-    
-    return resultado
+    return items_filtrado
 
 # ============================================
 # FUNÇÃO: Converter data para dd/mm
@@ -153,50 +114,24 @@ def formatar_data(data_str):
         return data_str
 
 # ============================================
-# FUNÇÃO: Gerar mensagem formatada
+# FUNÇÃO: Gerar mensagem simples
 # ============================================
 
-def gerar_mensagem(items_org):
-    """Gera mensagem com formatação melhorada"""
+def gerar_mensagem(items):
+    """Gera mensagem simples e funcional"""
     
     msg = "📋 Relatório CRM - Ação Esta Semana\n\n"
     
-    # Seção 1: Reunião, Envios, Follow Ups
-    if items_org['reuniao_enviada']:
-        msg += "🎯 REUNIÕES, ENVIOS E FOLLOW UPS:\n"
-        for item in items_org['reuniao_enviada']:
-            data = formatar_data(item['fu_date'])
-            acao = item['acao'] if item['acao'] else item['status']
-            msg += f"• {data} - {item['cliente']} - {acao}\n"
-        msg += "\n"
+    if not items:
+        msg += "Nenhum Follow Up nos próximos 30 dias"
+        return msg
     
-    # Seção 2: Spot Atual e Recorrente
-    if items_org['spot_recorrente']:
-        msg += "📌 SPOT ATUAL E RECORRENTE:\n"
-        for item in items_org['spot_recorrente']:
-            data = formatar_data(item['fu_date'])
-            acao = item['acao'] if item['acao'] else item['status']
-            msg += f"• {data} - {item['cliente']} - {acao}\n"
-        msg += "\n"
+    for item in items:
+        data = formatar_data(item['fu_date'])
+        acao = item['acao'] if item['acao'] else "(sem ação)"
+        msg += f"• {data} - {item['cliente']} - {acao}\n"
     
-    # Seção 3: Somente Spot
-    if items_org['somente_spot']:
-        msg += "📦 SOMENTE SPOT:\n"
-        for item in items_org['somente_spot']:
-            data = formatar_data(item['fu_date'])
-            acao = item['acao'] if item['acao'] else item['status']
-            msg += f"• {data} - {item['cliente']} - {acao}\n"
-        msg += "\n"
-    
-    # Seção 4: Lead Perdido
-    if items_org['lead_perdido']:
-        msg += "❌ LEAD PERDIDO:\n"
-        for item in items_org['lead_perdido']:
-            data = formatar_data(item['fu_date'])
-            msg += f"• {data} - {item['cliente']}\n"
-        msg += "\n"
-    
-    msg += "✅ Relatório sincronizado com Notion"
+    msg += "\n✅ Sincronizado com Notion"
     
     return msg
 
@@ -212,8 +147,7 @@ def enviar_whatsapp(mensagem):
         msg_encoded = urllib.parse.quote(mensagem)
         url = f"https://api.callmebot.com/whatsapp.php?phone={CALLMEBOT_PHONE}&apikey={CALLMEBOT_API_KEY}&text={msg_encoded}"
         
-        print(f"📱 Telefone: {CALLMEBOT_PHONE}")
-        print(f"🔗 Enviando para CallMeBot...")
+        print(f"📱 Enviando...")
         
         response = requests.get(url, timeout=10)
         
@@ -224,7 +158,6 @@ def enviar_whatsapp(mensagem):
             return True
         else:
             print(f"⚠️ Status: {response.status_code}")
-            print(f"Resposta: {response.text[:100]}")
             return False
     
     except Exception as e:
@@ -250,15 +183,11 @@ if not items:
 
 # Processa
 print("\n2️⃣ Filtrando Follow Ups...")
-items_semana = processar_dados(items)
-
-# Organiza
-print("\n3️⃣ Organizando por status...")
-items_org = organizar_por_status(items_semana)
+items_filtrado = processar_dados(items)
 
 # Gera mensagem
-print("\n4️⃣ Gerando mensagem...")
-mensagem = gerar_mensagem(items_org)
+print("\n3️⃣ Gerando mensagem...")
+mensagem = gerar_mensagem(items_filtrado)
 
 print("\n" + "="*60)
 print(mensagem)
