@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Script para gerar e enviar relatório CRM do Notion para WhatsApp
+Com formatação melhorada e agrupamento por tipo de status
 """
 
 import requests
@@ -105,26 +106,97 @@ def processar_dados(items):
     return items_semana
 
 # ============================================
-# FUNÇÃO: Gerar mensagem
+# FUNÇÃO: Organizar por status
 # ============================================
 
-def gerar_mensagem(items):
-    """Gera mensagem"""
+def organizar_por_status(items):
+    """Organiza items por tipo de status"""
+    
+    resultado = {
+        'reuniao_enviada': [],
+        'spot_recorrente': [],
+        'somente_spot': [],
+        'lead_perdido': []
+    }
+    
+    for item in items:
+        status = item['status'].lower()
+        
+        # Categoria 1: Reunião, Envios, Follow Ups
+        if any(x in status for x in ['reunião', 'enviada', 'iniciar']):
+            resultado['reuniao_enviada'].append(item)
+        
+        # Categoria 2: Spot Atual e Recorrente
+        elif any(x in status for x in ['spot atual', 'recorrente']):
+            resultado['spot_recorrente'].append(item)
+        
+        # Categoria 3: Somente Spot
+        elif 'somente spot' in status:
+            resultado['somente_spot'].append(item)
+        
+        # Categoria 4: Lead Perdido
+        elif 'lead perdido' in status:
+            resultado['lead_perdido'].append(item)
+    
+    return resultado
+
+# ============================================
+# FUNÇÃO: Converter data para dd/mm
+# ============================================
+
+def formatar_data(data_str):
+    """Converte 2026-08-13 para 13/08"""
+    try:
+        data = datetime.strptime(data_str, '%Y-%m-%d')
+        return data.strftime('%d/%m')
+    except:
+        return data_str
+
+# ============================================
+# FUNÇÃO: Gerar mensagem formatada
+# ============================================
+
+def gerar_mensagem(items_org):
+    """Gera mensagem com formatação melhorada"""
     
     msg = "📋 Relatório CRM - Ação Esta Semana\n\n"
     
-    if not items:
-        msg += "Nenhum Follow Up para esta semana"
-        return msg
+    # Seção 1: Reunião, Envios, Follow Ups
+    if items_org['reuniao_enviada']:
+        msg += "🎯 REUNIÕES, ENVIOS E FOLLOW UPS:\n"
+        for item in items_org['reuniao_enviada']:
+            data = formatar_data(item['fu_date'])
+            acao = item['acao'] if item['acao'] else item['status']
+            msg += f"• {data} - {item['cliente']} - {acao}\n"
+        msg += "\n"
     
-    for item in items:
-        data = item['fu_date'].split('-')
-        data_fmt = f"{data[2]}/{data[1]}"
-        msg += f"• {data_fmt} - {item['cliente']}\n"
-        if item['acao']:
-            msg += f"  → {item['acao']}\n"
+    # Seção 2: Spot Atual e Recorrente
+    if items_org['spot_recorrente']:
+        msg += "📌 SPOT ATUAL E RECORRENTE:\n"
+        for item in items_org['spot_recorrente']:
+            data = formatar_data(item['fu_date'])
+            acao = item['acao'] if item['acao'] else item['status']
+            msg += f"• {data} - {item['cliente']} - {acao}\n"
+        msg += "\n"
     
-    msg += "\n✅ Sincronizado com Notion"
+    # Seção 3: Somente Spot
+    if items_org['somente_spot']:
+        msg += "📦 SOMENTE SPOT:\n"
+        for item in items_org['somente_spot']:
+            data = formatar_data(item['fu_date'])
+            acao = item['acao'] if item['acao'] else item['status']
+            msg += f"• {data} - {item['cliente']} - {acao}\n"
+        msg += "\n"
+    
+    # Seção 4: Lead Perdido
+    if items_org['lead_perdido']:
+        msg += "❌ LEAD PERDIDO:\n"
+        for item in items_org['lead_perdido']:
+            data = formatar_data(item['fu_date'])
+            msg += f"• {data} - {item['cliente']}\n"
+        msg += "\n"
+    
+    msg += "✅ Relatório sincronizado com Notion"
     
     return msg
 
@@ -163,7 +235,6 @@ def enviar_whatsapp(mensagem):
 # MAIN
 # ============================================
 
-# Valida token
 if not NOTION_TOKEN:
     print("❌ NOTION_API_KEY não configurado!")
     exit(1)
@@ -181,9 +252,13 @@ if not items:
 print("\n2️⃣ Filtrando Follow Ups...")
 items_semana = processar_dados(items)
 
+# Organiza
+print("\n3️⃣ Organizando por status...")
+items_org = organizar_por_status(items_semana)
+
 # Gera mensagem
-print("\n3️⃣ Gerando mensagem...")
-mensagem = gerar_mensagem(items_semana)
+print("\n4️⃣ Gerando mensagem...")
+mensagem = gerar_mensagem(items_org)
 
 print("\n" + "="*60)
 print(mensagem)
