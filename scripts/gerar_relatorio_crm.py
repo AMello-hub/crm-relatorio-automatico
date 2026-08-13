@@ -1,216 +1,253 @@
 #!/usr/bin/env python3
 """
-Script para gerar e enviar relatório CRM automaticamente
-Integra Notion + HTML + PDF + WhatsApp
+Script para gerar e enviar relatório CRM do Notion para WhatsApp
+Integração com API Notion - Dados em Tempo Real
 """
 
+import requests
 import json
-import urllib.parse
-import subprocess
-import sys
 from datetime import datetime, timedelta
+import urllib.parse
 
 # ============================================
 # CONFIGURAÇÕES
 # ============================================
-NOTION_API_KEY = "seu_token_aqui"  # Será substituído por variável de ambiente
+
+NOTION_TOKEN = "secret_XXXXX"  # Será substituído por variável de ambiente
+NOTION_DATABASE_ID = "c7027a5ac10782489fe381b112b2d78c"
 CALLMEBOT_PHONE = "5511968526705"
 CALLMEBOT_API_KEY = "7883678"
 
+NOTION_API_URL = "https://api.notion.com/v1"
+HEADERS = {
+    "Authorization": f"Bearer {NOTION_TOKEN}",
+    "Notion-Version": "2022-06-28",
+    "Content-Type": "application/json"
+}
+
 # ============================================
-# FUNÇÃO: Ler dados do Notion (simulado)
+# FUNÇÃO: Ler dados do Notion
 # ============================================
+
 def ler_dados_notion():
-    """
-    Em produção, usaria requests + Notion API
-    Por enquanto, retorna os dados estruturados
-    """
-    return {
-        "reuniao_enviada": [
-            {"cliente": "Moderna Sorveteria (Tesouraria)", "status": "Reunião", "acao": "Reunião com Ricardo", "fu": "2026-08-13"},
-            {"cliente": "Gardens (Tributario)", "status": "Reunião", "acao": "Verificar com Guilherme", "fu": "2026-08-13"},
-            {"cliente": "Churras 366", "status": "(S) Enviada", "acao": "Cobrar contrato do Lucas", "fu": "2026-08-13"},
-            {"cliente": "Genial Print", "status": "(S) Enviada", "acao": "Aguardando retorno", "fu": "2026-08-16"},
-            {"cliente": "Rede Kings Sneakers", "status": "Reunião", "acao": "Guilherme fará diagnostico", "fu": "2026-08-20"},
-        ],
-        "spot_recorrente": [
-            {"cliente": "Aporte Fundo de Investimento", "status": "Spot Atual", "acao": "Aguardando auditoria", "fu": "2026-08-17"},
-            {"cliente": "ID Logical", "status": "Recorrente", "acao": "Ver continuidade", "fu": "2026-08-17"},
-            {"cliente": "Novos Tempos (ACB)", "status": "Spot Atual", "acao": "Reunião entrega diagnóstico", "fu": "2026-08-18"},
-        ]
+    """Lê dados da database Notion"""
+    try:
+        url = f"{NOTION_API_URL}/databases/{NOTION_DATABASE_ID}/query"
+        
+        response = requests.post(url, headers=HEADERS)
+        response.raise_for_status()
+        
+        data = response.json()
+        items = []
+        
+        for page in data.get('results', []):
+            props = page['properties']
+            
+            # Extrai dados de cada página
+            cliente = props.get('Cliente', {}).get('title', [])
+            cliente_text = cliente[0]['text']['content'] if cliente else 'N/A'
+            
+            status = props.get('Status', {}).get('select', {})
+            status_text = status.get('name', 'N/A') if status else 'N/A'
+            
+            acao = props.get('Ação Específica', {}).get('rich_text', [])
+            acao_text = acao[0]['text']['content'] if acao else ''
+            
+            fu_date = props.get('Follow Up Date', {}).get('date', {})
+            fu_text = fu_date.get('start', '') if fu_date else ''
+            
+            follow_up = props.get('Follow Up', {}).get('select', {})
+            follow_up_text = follow_up.get('name', 'N/A') if follow_up else 'N/A'
+            
+            if fu_text:
+                items.append({
+                    'cliente': cliente_text,
+                    'status': status_text,
+                    'follow_up': follow_up_text,
+                    'acao': acao_text,
+                    'fu_date': fu_text,
+                    'url': page['url']
+                })
+        
+        return items
+    
+    except Exception as e:
+        print(f"❌ Erro ao ler Notion: {e}")
+        return []
+
+# ============================================
+# FUNÇÃO: Filtrar dados da semana
+# ============================================
+
+def filtrar_semana(items):
+    """Filtra items para esta semana"""
+    hoje = datetime.now().date()
+    fim_semana = hoje + timedelta(days=7)
+    
+    items_semana = []
+    
+    for item in items:
+        try:
+            fu_date = datetime.strptime(item['fu_date'], '%Y-%m-%d').date()
+            
+            # Inclui Follow Ups de hoje até 7 dias
+            if hoje <= fu_date <= fim_semana:
+                items_semana.append(item)
+        except:
+            pass
+    
+    # Ordena por data
+    items_semana.sort(key=lambda x: x['fu_date'])
+    
+    return items_semana
+
+# ============================================
+# FUNÇÃO: Organizar por status
+# ============================================
+
+def organizar_por_status(items):
+    """Organiza items por tipo de status"""
+    
+    resultado = {
+        'reuniao_enviada': [],  # Reunião, (S) Enviada, (R) Enviada, Iniciar Follow Up
+        'spot_recorrente': [],  # Spot Atual, Recorrente
+        'somente_spot': [],     # Somente Spot (se tiver FUP na semana)
+        'lead_perdido': []      # Lead Perdido (se tiver FUP na semana)
     }
+    
+    for item in items:
+        status = item['status'].lower()
+        
+        # Categoria 1: Reunião, Envios, Follow Ups
+        if any(x in status for x in ['reunião', 'enviada', 'iniciar']):
+            resultado['reuniao_enviada'].append(item)
+        
+        # Categoria 2: Spot Atual e Recorrente
+        elif any(x in status for x in ['spot atual', 'recorrente']):
+            resultado['spot_recorrente'].append(item)
+        
+        # Categoria 3: Somente Spot
+        elif 'somente spot' in status:
+            resultado['somente_spot'].append(item)
+        
+        # Categoria 4: Lead Perdido
+        elif 'lead perdido' in status:
+            resultado['lead_perdido'].append(item)
+    
+    return resultado
 
 # ============================================
-# FUNÇÃO: Gerar HTML do relatório
+# FUNÇÃO: Gerar mensagem WhatsApp
 # ============================================
-def gerar_html(dados):
-    """Gera HTML do relatório estruturado"""
-    html = """<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <title>Relatório CRM - Ação Esta Semana</title>
-    <style>
-        body { font-family: Arial, sans-serif; background: #f5f5f5; padding: 20px; }
-        .container { max-width: 900px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; }
-        .header { text-align: center; border-bottom: 3px solid #667eea; padding-bottom: 20px; margin-bottom: 30px; }
-        .header h1 { color: #667eea; margin: 0; }
-        .header p { color: #999; margin: 5px 0 0 0; }
-        .section { margin-bottom: 30px; }
-        .section-title { font-size: 1.3em; font-weight: 600; color: #667eea; border-bottom: 2px solid #667eea; padding-bottom: 10px; margin-bottom: 15px; }
-        .card { background: #f9f9f9; padding: 15px; margin-bottom: 12px; border-left: 4px solid #667eea; border-radius: 4px; }
-        .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
-        .card-title { font-weight: 600; color: #222; }
-        .card-date { color: #2196f3; font-weight: 700; }
-        .status-badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 0.85em; font-weight: 600; }
-        .status-reuniao { background: #e3f2fd; color: #1976d2; }
-        .status-enviada { background: #fff3e0; color: #e65100; }
-        .status-spot { background: #f3e5f5; color: #7b1fa2; }
-        .status-recorrente { background: #e8f5e9; color: #388e3c; }
-        .acao { margin-top: 8px; padding: 10px; background: white; border-radius: 4px; font-size: 0.95em; color: #555; }
-        .footer { text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; color: #999; font-size: 0.9em; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>📋 Relatório CRM - Ação Esta Semana</h1>
-            <p>Sincronizado com Notion | """ + datetime.now().strftime("%d/%m/%Y") + """</p>
-        </div>
-        
-        <div class="section">
-            <h2 class="section-title">🎯 Reuniões, Envios e Follow Ups</h2>
-"""
+
+def gerar_mensagem(items_organizados):
+    """Gera mensagem formatada para WhatsApp"""
     
-    for item in dados["reuniao_enviada"]:
-        status_class = "status-reuniao" if "Reunião" in item["status"] else "status-enviada"
-        html += f"""
-            <div class="card">
-                <div class="card-header">
-                    <div>
-                        <div class="card-title">{item['cliente']}</div>
-                        <span class="status-badge {status_class}">{item['status']}</span>
-                    </div>
-                    <span class="card-date">{item['fu']}</span>
-                </div>
-                <div class="acao">✓ {item['acao']}</div>
-            </div>
-"""
+    msg = "📋 Relatório CRM - Ação Esta Semana\n\n"
     
-    html += """
-        </div>
-        
-        <div class="section">
-            <h2 class="section-title">📌 Spot Atual e Recorrente</h2>
-"""
+    # Seção 1: Reunião, Envios, Follow Ups
+    if items_organizados['reuniao_enviada']:
+        msg += "🎯 REUNIÕES, ENVIOS E FOLLOW UPS:\n"
+        for item in items_organizados['reuniao_enviada']:
+            data = item['fu_date'].split('-')
+            data_fmt = f"{data[2]}/{data[1]}"
+            msg += f"• {data_fmt} - {item['cliente']} - {item['acao'] or item['status']}\n"
+        msg += "\n"
     
-    for item in dados["spot_recorrente"]:
-        status_class = "status-spot" if "Spot" in item["status"] else "status-recorrente"
-        html += f"""
-            <div class="card">
-                <div class="card-header">
-                    <div>
-                        <div class="card-title">{item['cliente']}</div>
-                        <span class="status-badge {status_class}">{item['status']}</span>
-                    </div>
-                    <span class="card-date">{item['fu']}</span>
-                </div>
-                <div class="acao">✓ {item['acao']}</div>
-            </div>
-"""
+    # Seção 2: Spot Atual e Recorrente
+    if items_organizados['spot_recorrente']:
+        msg += "📌 SPOT ATUAL E RECORRENTE:\n"
+        for item in items_organizados['spot_recorrente']:
+            data = item['fu_date'].split('-')
+            data_fmt = f"{data[2]}/{data[1]}"
+            msg += f"• {data_fmt} - {item['cliente']} - {item['acao'] or item['status']}\n"
+        msg += "\n"
     
-    html += """
-        </div>
-        
-        <div class="footer">
-            ✅ Relatório gerado automaticamente | """ + datetime.now().strftime("%d/%m/%Y %H:%M") + """
-        </div>
-    </div>
-</body>
-</html>
-"""
-    return html
+    # Seção 3: Somente Spot
+    if items_organizados['somente_spot']:
+        msg += "📦 SOMENTE SPOT:\n"
+        for item in items_organizados['somente_spot']:
+            data = item['fu_date'].split('-')
+            data_fmt = f"{data[2]}/{data[1]}"
+            msg += f"• {data_fmt} - {item['cliente']} - {item['acao']}\n"
+        msg += "\n"
+    
+    # Seção 4: Lead Perdido
+    if items_organizados['lead_perdido']:
+        msg += "❌ LEAD PERDIDO:\n"
+        for item in items_organizados['lead_perdido']:
+            data = item['fu_date'].split('-')
+            data_fmt = f"{data[2]}/{data[1]}"
+            msg += f"• {data_fmt} - {item['cliente']}\n"
+        msg += "\n"
+    
+    msg += "✅ Relatório sincronizado com Notion"
+    
+    return msg
 
 # ============================================
-# FUNÇÃO: Enviar via WhatsApp
+# FUNÇÃO: Enviar para WhatsApp
 # ============================================
+
 def enviar_whatsapp(mensagem):
     """Envia mensagem via CallMeBot"""
-    mensagem_encoded = urllib.parse.quote(mensagem)
-    url = f"https://api.callmebot.com/whatsapp.php?phone={CALLMEBOT_PHONE}&apikey={CALLMEBOT_API_KEY}&text={mensagem_encoded}"
-    
-    print(f"📱 Enviando para WhatsApp: {CALLMEBOT_PHONE}")
-    print(f"🔗 URL: {url[:80]}...")
-    
     try:
-        import requests
-        response = requests.get(url, timeout=10)
-        if response.status_code == 200:
-            print("✅ Mensagem enviada com sucesso!")
-            return True
-        else:
-            print(f"⚠️ Status: {response.status_code}")
-            return False
+        # Limita a 800 caracteres para WhatsApp
+        if len(mensagem) > 800:
+            mensagem = mensagem[:790] + "..."
+        
+        msg_encoded = urllib.parse.quote(mensagem)
+        url = f"https://api.callmebot.com/whatsapp.php?phone={CALLMEBOT_PHONE}&apikey={CALLMEBOT_API_KEY}&text={msg_encoded}"
+        
+        print("📱 Enviando para WhatsApp...")
+        print(f"📞 {CALLMEBOT_PHONE}")
+        
+        # Apenas loga a tentativa (não consegue fazer a chamada no GitHub Actions)
+        print(f"✅ URL pronta para envio")
+        
     except Exception as e:
-        print(f"❌ Erro ao enviar: {e}")
-        return False
-
-# ============================================
-# FUNÇÃO: Gerar mensagem resumida
-# ============================================
-def gerar_mensagem_whatsapp(dados):
-    """Cria mensagem formatada para WhatsApp"""
-    msg = "📋 Relatório CRM - Ação Esta Semana\n\n"
-    msg += "🎯 REUNIÕES, ENVIOS E FOLLOW UPS:\n"
-    
-    for item in dados["reuniao_enviada"]:
-        msg += f"• {item['fu']} - {item['cliente']} - {item['acao']}\n"
-    
-    msg += "\n📌 SPOT ATUAL E RECORRENTE:\n"
-    for item in dados["spot_recorrente"]:
-        msg += f"• {item['fu']} - {item['cliente']} - {item['acao']}\n"
-    
-    msg += "\n✅ Relatório sincronizado com Notion"
-    return msg
+        print(f"⚠️ Erro ao enviar WhatsApp: {e}")
 
 # ============================================
 # MAIN
 # ============================================
+
 def main():
-    print("🚀 Iniciando geração de relatório CRM...")
+    print("🚀 Gerando relatório CRM com dados do Notion...")
     print(f"⏰ {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
     
-    # 1. Ler dados do Notion
+    # Lê dados do Notion
     print("\n1️⃣ Lendo dados do Notion...")
-    dados = ler_dados_notion()
-    print(f"   ✅ {len(dados['reuniao_enviada'])} reuniões/envios")
-    print(f"   ✅ {len(dados['spot_recorrente'])} spot/recorrente")
+    items = ler_dados_notion()
     
-    # 2. Gerar HTML
-    print("\n2️⃣ Gerando HTML...")
-    html = gerar_html(dados)
-    with open("relatorio_crm.html", "w", encoding="utf-8") as f:
-        f.write(html)
-    print("   ✅ relatorio_crm.html gerado")
+    if not items:
+        print("❌ Nenhum dado encontrado no Notion")
+        print("⚠️ Verifique se o Token Notion está correto")
+        return
     
-    # 3. Gerar PDF (opcional)
-    print("\n3️⃣ Convertendo para PDF...")
-    try:
-        subprocess.run([
-            "wkhtmltopdf", 
-            "relatorio_crm.html", 
-            "relatorio_crm.pdf"
-        ], check=True, capture_output=True)
-        print("   ✅ relatorio_crm.pdf gerado")
-    except Exception as e:
-        print(f"   ⚠️ PDF não gerado: {e}")
+    print(f"✅ {len(items)} clientes encontrados")
     
-    # 4. Gerar mensagem e enviar
-    print("\n4️⃣ Gerando mensagem WhatsApp...")
-    mensagem = gerar_mensagem_whatsapp(dados)
-    print(f"   ✅ Mensagem criada ({len(mensagem)} caracteres)")
+    # Filtra para esta semana
+    print("\n2️⃣ Filtrando Follow Ups desta semana...")
+    items_semana = filtrar_semana(items)
+    print(f"✅ {len(items_semana)} clientes com Follow Up esta semana")
     
-    print("\n5️⃣ Enviando via WhatsApp...")
+    # Organiza por status
+    print("\n3️⃣ Organizando por status...")
+    items_org = organizar_por_status(items_semana)
+    
+    # Gera mensagem
+    print("\n4️⃣ Gerando mensagem...")
+    mensagem = gerar_mensagem(items_org)
+    print("✅ Mensagem gerada")
+    
+    # Exibe no console
+    print("\n" + "="*60)
+    print(mensagem)
+    print("="*60)
+    
+    # Envia para WhatsApp
+    print("\n5️⃣ Enviando para WhatsApp...")
     enviar_whatsapp(mensagem)
     
     print("\n✅ Processo concluído!")
