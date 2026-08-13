@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 # ============================================
 
 NOTION_TOKEN = os.environ.get("NOTION_API_KEY", "")
-NOTION_DATABASE_ID = "c7027a5ac10782489fe381b112b2d78c"
+NOTION_DATABASE_ID = "35427a5ac10780d599a8f851bdead6c8"
 
 print("🚀 Gerando relatório CRM com dados do Notion...")
 print(f"⏰ {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
