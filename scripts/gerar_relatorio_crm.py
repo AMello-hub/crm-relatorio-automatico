@@ -1,40 +1,54 @@
 #!/usr/bin/env python3
 """
 Script para gerar e enviar relatório CRM do Notion para WhatsApp
-Integração com API Notion - Dados em Tempo Real
+Compatível com novo token Notion (ntn_)
 """
 
 import requests
-import json
+import os
 from datetime import datetime, timedelta
-import urllib.parse
 
 # ============================================
 # CONFIGURAÇÕES
 # ============================================
 
-NOTION_TOKEN = "secret_XXXXX"  # Será substituído por variável de ambiente
+NOTION_TOKEN = os.environ.get("NOTION_API_KEY", "")
 NOTION_DATABASE_ID = "c7027a5ac10782489fe381b112b2d78c"
-CALLMEBOT_PHONE = "5511968526705"
-CALLMEBOT_API_KEY = "7883678"
 
-NOTION_API_URL = "https://api.notion.com/v1"
-HEADERS = {
-    "Authorization": f"Bearer {NOTION_TOKEN}",
-    "Notion-Version": "2022-06-28",
-    "Content-Type": "application/json"
-}
+print("🚀 Gerando relatório CRM com dados do Notion...")
+print(f"⏰ {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
 
 # ============================================
-# FUNÇÃO: Ler dados do Notion
+# FUNÇÃO: Ler dados do Notion com novo token
 # ============================================
 
 def ler_dados_notion():
-    """Lê dados da database Notion"""
+    """Lê dados da database Notion com novo token ntn_"""
     try:
-        url = f"{NOTION_API_URL}/databases/{NOTION_DATABASE_ID}/query"
+        print("\n1️⃣ Lendo dados do Notion...")
         
-        response = requests.post(url, headers=HEADERS)
+        url = f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}/query"
+        
+        headers = {
+            "Authorization": f"Bearer {NOTION_TOKEN}",
+            "Notion-Version": "2024-06-15",
+            "Content-Type": "application/json"
+        }
+        
+        print(f"🔗 Conectando: {NOTION_DATABASE_ID[:20]}...")
+        response = requests.post(url, headers=headers, timeout=10)
+        
+        print(f"📊 Status HTTP: {response.status_code}")
+        
+        if response.status_code == 401:
+            print("❌ Erro 401: Token não autorizado ou inválido")
+            print("⚠️ Verifique o token NOTION_API_KEY no GitHub Secrets")
+            return []
+        
+        if response.status_code != 200:
+            print(f"❌ Erro {response.status_code}: {response.text}")
+            return []
+        
         response.raise_for_status()
         
         data = response.json()
@@ -43,7 +57,7 @@ def ler_dados_notion():
         for page in data.get('results', []):
             props = page['properties']
             
-            # Extrai dados de cada página
+            # Extrai dados
             cliente = props.get('Cliente', {}).get('title', [])
             cliente_text = cliente[0]['text']['content'] if cliente else 'N/A'
             
@@ -56,19 +70,15 @@ def ler_dados_notion():
             fu_date = props.get('Follow Up Date', {}).get('date', {})
             fu_text = fu_date.get('start', '') if fu_date else ''
             
-            follow_up = props.get('Follow Up', {}).get('select', {})
-            follow_up_text = follow_up.get('name', 'N/A') if follow_up else 'N/A'
-            
             if fu_text:
                 items.append({
                     'cliente': cliente_text,
                     'status': status_text,
-                    'follow_up': follow_up_text,
                     'acao': acao_text,
-                    'fu_date': fu_text,
-                    'url': page['url']
+                    'fu_date': fu_text
                 })
         
+        print(f"✅ {len(items)} clientes encontrados")
         return items
     
     except Exception as e:
@@ -76,11 +86,11 @@ def ler_dados_notion():
         return []
 
 # ============================================
-# FUNÇÃO: Filtrar dados da semana
+# FUNÇÃO: Filtrar e organizar dados
 # ============================================
 
-def filtrar_semana(items):
-    """Filtra items para esta semana"""
+def processar_dados(items):
+    """Filtra e organiza dados da semana"""
     hoje = datetime.now().date()
     fim_semana = hoje + timedelta(days=7)
     
@@ -89,168 +99,71 @@ def filtrar_semana(items):
     for item in items:
         try:
             fu_date = datetime.strptime(item['fu_date'], '%Y-%m-%d').date()
-            
-            # Inclui Follow Ups de hoje até 7 dias
             if hoje <= fu_date <= fim_semana:
                 items_semana.append(item)
         except:
             pass
     
-    # Ordena por data
     items_semana.sort(key=lambda x: x['fu_date'])
+    
+    print(f"✅ {len(items_semana)} com Follow Up esta semana")
     
     return items_semana
 
 # ============================================
-# FUNÇÃO: Organizar por status
+# FUNÇÃO: Gerar mensagem
 # ============================================
 
-def organizar_por_status(items):
-    """Organiza items por tipo de status"""
-    
-    resultado = {
-        'reuniao_enviada': [],  # Reunião, (S) Enviada, (R) Enviada, Iniciar Follow Up
-        'spot_recorrente': [],  # Spot Atual, Recorrente
-        'somente_spot': [],     # Somente Spot (se tiver FUP na semana)
-        'lead_perdido': []      # Lead Perdido (se tiver FUP na semana)
-    }
-    
-    for item in items:
-        status = item['status'].lower()
-        
-        # Categoria 1: Reunião, Envios, Follow Ups
-        if any(x in status for x in ['reunião', 'enviada', 'iniciar']):
-            resultado['reuniao_enviada'].append(item)
-        
-        # Categoria 2: Spot Atual e Recorrente
-        elif any(x in status for x in ['spot atual', 'recorrente']):
-            resultado['spot_recorrente'].append(item)
-        
-        # Categoria 3: Somente Spot
-        elif 'somente spot' in status:
-            resultado['somente_spot'].append(item)
-        
-        # Categoria 4: Lead Perdido
-        elif 'lead perdido' in status:
-            resultado['lead_perdido'].append(item)
-    
-    return resultado
-
-# ============================================
-# FUNÇÃO: Gerar mensagem WhatsApp
-# ============================================
-
-def gerar_mensagem(items_organizados):
-    """Gera mensagem formatada para WhatsApp"""
+def gerar_mensagem(items):
+    """Gera mensagem formatada"""
     
     msg = "📋 Relatório CRM - Ação Esta Semana\n\n"
     
-    # Seção 1: Reunião, Envios, Follow Ups
-    if items_organizados['reuniao_enviada']:
-        msg += "🎯 REUNIÕES, ENVIOS E FOLLOW UPS:\n"
-        for item in items_organizados['reuniao_enviada']:
-            data = item['fu_date'].split('-')
-            data_fmt = f"{data[2]}/{data[1]}"
-            msg += f"• {data_fmt} - {item['cliente']} - {item['acao'] or item['status']}\n"
-        msg += "\n"
+    if not items:
+        msg += "Nenhum Follow Up para esta semana"
+        return msg
     
-    # Seção 2: Spot Atual e Recorrente
-    if items_organizados['spot_recorrente']:
-        msg += "📌 SPOT ATUAL E RECORRENTE:\n"
-        for item in items_organizados['spot_recorrente']:
-            data = item['fu_date'].split('-')
-            data_fmt = f"{data[2]}/{data[1]}"
-            msg += f"• {data_fmt} - {item['cliente']} - {item['acao'] or item['status']}\n"
-        msg += "\n"
+    for item in items:
+        data = item['fu_date'].split('-')
+        data_fmt = f"{data[2]}/{data[1]}"
+        msg += f"• {data_fmt} - {item['cliente']}\n"
+        if item['acao']:
+            msg += f"  → {item['acao']}\n"
     
-    # Seção 3: Somente Spot
-    if items_organizados['somente_spot']:
-        msg += "📦 SOMENTE SPOT:\n"
-        for item in items_organizados['somente_spot']:
-            data = item['fu_date'].split('-')
-            data_fmt = f"{data[2]}/{data[1]}"
-            msg += f"• {data_fmt} - {item['cliente']} - {item['acao']}\n"
-        msg += "\n"
-    
-    # Seção 4: Lead Perdido
-    if items_organizados['lead_perdido']:
-        msg += "❌ LEAD PERDIDO:\n"
-        for item in items_organizados['lead_perdido']:
-            data = item['fu_date'].split('-')
-            data_fmt = f"{data[2]}/{data[1]}"
-            msg += f"• {data_fmt} - {item['cliente']}\n"
-        msg += "\n"
-    
-    msg += "✅ Relatório sincronizado com Notion"
+    msg += "\n✅ Sincronizado com Notion"
     
     return msg
-
-# ============================================
-# FUNÇÃO: Enviar para WhatsApp
-# ============================================
-
-def enviar_whatsapp(mensagem):
-    """Envia mensagem via CallMeBot"""
-    try:
-        # Limita a 800 caracteres para WhatsApp
-        if len(mensagem) > 800:
-            mensagem = mensagem[:790] + "..."
-        
-        msg_encoded = urllib.parse.quote(mensagem)
-        url = f"https://api.callmebot.com/whatsapp.php?phone={CALLMEBOT_PHONE}&apikey={CALLMEBOT_API_KEY}&text={msg_encoded}"
-        
-        print("📱 Enviando para WhatsApp...")
-        print(f"📞 {CALLMEBOT_PHONE}")
-        
-        # Apenas loga a tentativa (não consegue fazer a chamada no GitHub Actions)
-        print(f"✅ URL pronta para envio")
-        
-    except Exception as e:
-        print(f"⚠️ Erro ao enviar WhatsApp: {e}")
 
 # ============================================
 # MAIN
 # ============================================
 
-def main():
-    print("🚀 Gerando relatório CRM com dados do Notion...")
-    print(f"⏰ {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
-    
-    # Lê dados do Notion
-    print("\n1️⃣ Lendo dados do Notion...")
-    items = ler_dados_notion()
-    
-    if not items:
-        print("❌ Nenhum dado encontrado no Notion")
-        print("⚠️ Verifique se o Token Notion está correto")
-        return
-    
-    print(f"✅ {len(items)} clientes encontrados")
-    
-    # Filtra para esta semana
-    print("\n2️⃣ Filtrando Follow Ups desta semana...")
-    items_semana = filtrar_semana(items)
-    print(f"✅ {len(items_semana)} clientes com Follow Up esta semana")
-    
-    # Organiza por status
-    print("\n3️⃣ Organizando por status...")
-    items_org = organizar_por_status(items_semana)
-    
-    # Gera mensagem
-    print("\n4️⃣ Gerando mensagem...")
-    mensagem = gerar_mensagem(items_org)
-    print("✅ Mensagem gerada")
-    
-    # Exibe no console
-    print("\n" + "="*60)
-    print(mensagem)
-    print("="*60)
-    
-    # Envia para WhatsApp
-    print("\n5️⃣ Enviando para WhatsApp...")
-    enviar_whatsapp(mensagem)
-    
-    print("\n✅ Processo concluído!")
+# Valida token
+if not NOTION_TOKEN or NOTION_TOKEN == "":
+    print("❌ ERRO: NOTION_API_KEY não configurado!")
+    print("⚠️ Adicione o token nos GitHub Secrets")
+    exit(1)
 
-if __name__ == "__main__":
-    main()
+print(f"✅ Token Notion detectado: {NOTION_TOKEN[:20]}...")
+
+# Lê dados
+items = ler_dados_notion()
+
+if not items:
+    print("⚠️ Sem dados. Verifique a conexão com Notion.")
+    exit(0)
+
+# Processa
+print("\n2️⃣ Filtrando Follow Ups...")
+items_semana = processar_dados(items)
+
+# Gera mensagem
+print("\n3️⃣ Gerando mensagem...")
+mensagem = gerar_mensagem(items_semana)
+
+print("\n" + "="*60)
+print(mensagem)
+print("="*60)
+
+print("\n✅ Processo concluído!")
+print("📱 Mensagem pronta para WhatsApp")
