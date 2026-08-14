@@ -36,12 +36,13 @@ def ler_dados():
 
 def filtrar(items):
     hoje = datetime.now().date()
-    fim = hoje + timedelta(days=7)
+    segunda = hoje - timedelta(days=hoje.weekday())
+    domingo = segunda + timedelta(days=6)
     filtrado = []
     for item in items:
         try:
             fu = datetime.strptime(item['fu_date'], '%Y-%m-%d').date()
-            if hoje <= fu <= fim:
+            if segunda <= fu <= domingo:
                 filtrado.append(item)
         except:
             pass
@@ -75,13 +76,13 @@ def gerar_msgs_duas_partes(items):
     spot_only = [i for i in items if categorizar(i['status']) == 'spot_only']
     lead = [i for i in items if categorizar(i['status']) == 'lead']
     
-    data_ini = formatar_data(items[0]['fu_date'])
-    data_fim = formatar_data(items[-1]['fu_date'])
+    data_ini = formatar_data(segunda.isoformat())
+    data_fim = formatar_data(domingo.isoformat())
     
-    msg1 = f"📋 Relatorio CRM - Acao Esta Semana ({data_ini}-{data_fim})\n"
+    msg1 = f"📋 Relatorio CRM - Ação Esta Semana ({data_ini}-{data_fim})\n"
     
     if reuniao:
-        msg1 += "\n🎯 Reunies, Envios e Follow Ups:\n"
+        msg1 += "\n🎯 Reuniões, Envios e Follow Ups:\n"
         for item in reuniao:
             data = formatar_data(item['fu_date'])
             acao = item['acao'][:35] if item['acao'] else "Sem acao"
@@ -166,8 +167,8 @@ print(msg2)
 print("\nEnviando Parte 1...")
 enviar(msg1, 1)
 
-print("\nAguardando 5 minutos...")
-time.sleep(300)
+print("\nAguardando 1.30 minutos...")
+time.sleep(90)
 
 print("\nEnviando Parte 2...")
 enviar(msg2, 2)
