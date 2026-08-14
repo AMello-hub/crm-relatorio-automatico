@@ -122,7 +122,7 @@ def gerar_msgs_duas_partes(items):
             cliente = item['cliente'][:30]
             msg2 += f"* *{data}* - {cliente}\n"
     
-    msg2 += "\n **Sincronizado com Notion**"
+    msg2 += "\n✅ Sincronizado com Notion"
     
     return msg1, msg2
 
