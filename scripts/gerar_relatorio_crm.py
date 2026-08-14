@@ -78,10 +78,10 @@ def gerar_msgs_duas_partes(items):
     data_ini = formatar_data(items[0]['fu_date'])
     data_fim = formatar_data(items[-1]['fu_date'])
     
-    msg1 = f"Relatorio CRM - Acao Esta Semana ({data_ini}-{data_fim})\n"
+    msg1 = f"📋 Relatorio CRM - Acao Esta Semana ({data_ini}-{data_fim})\n"
     
     if reuniao:
-        msg1 += "\n Reunies, Envios e Follow Ups:\n"
+        msg1 += "\n🎯 Reunies, Envios e Follow Ups:\n"
         for item in reuniao:
             data = formatar_data(item['fu_date'])
             acao = item['acao'][:35] if item['acao'] else "Sem acao"
@@ -90,7 +90,7 @@ def gerar_msgs_duas_partes(items):
     
     spot_p1 = spot[:len(spot)//2]
     if spot_p1:
-        msg1 += "\n Spot Atual e Recorrente:\n"
+        msg1 += "\n📌 Spot Atual e Recorrente:\n"
         for item in spot_p1:
             data = formatar_data(item['fu_date'])
             acao = item['acao'][:35] if item['acao'] else "Sem acao"
@@ -100,7 +100,7 @@ def gerar_msgs_duas_partes(items):
     msg2 = ""
     spot_p2 = spot[len(spot)//2:]
     if spot_p2:
-        msg2 += " Spot Atual e Recorrente (continuacao):\n"
+        msg2 += "📌 Spot Atual e Recorrente (continuacao):\n"
         for item in spot_p2:
             data = formatar_data(item['fu_date'])
             acao = item['acao'][:35] if item['acao'] else "Sem acao"
@@ -108,7 +108,7 @@ def gerar_msgs_duas_partes(items):
             msg2 += f"* *{data}* - {cliente} - {acao}\n"
     
     if spot_only:
-        msg2 += "\n Somente Spot:\n"
+        msg2 += "\n📦 Somente Spot:\n"
         for item in spot_only:
             data = formatar_data(item['fu_date'])
             acao = item['acao'][:35] if item['acao'] else "Sem acao"
@@ -116,13 +116,13 @@ def gerar_msgs_duas_partes(items):
             msg2 += f"* *{data}* - {cliente} - {acao}\n"
     
     if lead:
-        msg2 += "\n Lead Perdido:\n"
+        msg2 += "\n❌ Lead Perdido:\n"
         for item in lead:
             data = formatar_data(item['fu_date'])
             cliente = item['cliente'][:30]
             msg2 += f"* *{data}* - {cliente}\n"
     
-    msg2 += "\n Sincronizado com Notion"
+    msg2 += "\n **Sincronizado com Notion**"
     
     return msg1, msg2
 
