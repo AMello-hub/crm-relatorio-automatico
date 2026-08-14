@@ -9,6 +9,7 @@ CALLMEBOT_API_KEY = os.environ.get("CALLMEBOT_API_KEY", "7883678")
 
 def ler_dados():
     try:
+        print("1️⃣ Lendo...")
         url = f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}/query"
         headers = {
             "Authorization": f"Bearer {NOTION_TOKEN}",
@@ -16,31 +17,78 @@ def ler_dados():
         }
         response = requests.post(url, headers=headers, timeout=10)
         if response.status_code != 200:
+            print(f"Erro HTTP: {response.status_code}")
             return []
         
         items = []
-        for page in response.json().get('results', []):
-            props = page['properties']
-            cliente = props.get('Cliente', {}).get('title', [])
-            status = props.get('Status', {}).get('select', {})
-            acao = props.get('Ação Específica', {}).get('rich_text', [])
-            fu_date = props.get('Follow Up Date', {}).get('date', {})
+        results = response.json()
+        if not results or 'results' not in results:
+            print("Sem resultados")
+            return []
+        
+        for page in results['results']:
+            try:
+                if not page or 'properties' not in page:
+                    continue
+                
+                props = page['properties']
+                if not props:
+                    continue
+                
+                # Cliente - SUPER VERIFICADO
+                cliente = "N/A"
+                if 'Cliente' in props and props['Cliente'] is not None:
+                    cliente_prop = props['Cliente']
+                    if 'title' in cliente_prop and cliente_prop['title']:
+                        cliente = cliente_prop['title'][0]['text']['content']
+                
+                # Status - SUPER VERIFICADO
+                status = ""
+                if 'Status' in props and props['Status'] is not None:
+                    status_prop = props['Status']
+                    if 'select' in status_prop and status_prop['select'] is not None:
+                        if 'name' in status_prop['select']:
+                            status = status_prop['select']['name'].lower()
+                
+                # Ação - SUPER VERIFICADO
+                acao = ""
+                if 'Ação Específica' in props and props['Ação Específica'] is not None:
+                    acao_prop = props['Ação Específica']
+                    if 'rich_text' in acao_prop and acao_prop['rich_text']:
+                        acao = acao_prop['rich_text'][0]['text']['content']
+                
+                # Follow Up Date - SUPER VERIFICADO
+                fu_date = None
+                if 'Follow Up Date' in props and props['Follow Up Date'] is not None:
+                    fu_prop = props['Follow Up Date']
+                    if 'date' in fu_prop and fu_prop['date'] is not None:
+                        if 'start' in fu_prop['date']:
+                            fu_date = fu_prop['date']['start']
+                
+                # Só adiciona se tiver cliente e data
+                if cliente != "N/A" and fu_date:
+                    items.append({
+                        'cliente': cliente,
+                        'status': status,
+                        'acao': acao,
+                        'fu_date': fu_date
+                    })
             
-            if fu_date.get('start'):
-                items.append({
-                    'cliente': cliente[0]['text']['content'] if cliente else 'N/A',
-                    'status': status.get('name', '').lower() if status else '',
-                    'acao': acao[0]['text']['content'] if acao else '',
-                    'fu_date': fu_date.get('start', '')
-                })
+            except Exception as e:
+                print(f"Erro ao processar item: {e}")
+                continue
         
         print(f"✅ {len(items)} clientes")
         return items
+    
     except Exception as e:
-        print(f"❌ Erro: {e}")
+        print(f"❌ Erro geral: {e}")
         return []
 
 def filtrar(items):
+    if not items:
+        return []
+    
     hoje = datetime.now().date()
     fim = hoje + timedelta(days=30)
     filtrado = []
@@ -70,7 +118,7 @@ def gerar_msg(items):
     spot = []
     
     for item in items:
-        status = item['status']
+        status = item.get('status', '').lower()
         if 'reunião' in status or 'enviada' in status or 'iniciar' in status:
             reuniao.append(item)
         elif 'spot atual' in status or 'recorrente' in status:
@@ -85,7 +133,7 @@ def gerar_msg(items):
         msg += "\n🎯 REUNIÕES, ENVIOS E FOLLOW UPS:\n"
         for item in reuniao:
             data = formatar_data(item['fu_date'])
-            acao = item['acao'][:60] if item['acao'] else item['status']
+            acao = item['acao'][:60] if item['acao'] else "Sem ação"
             cliente = item['cliente'][:40]
             msg += f"• {data} - {cliente} - {acao}\n"
     
@@ -93,7 +141,7 @@ def gerar_msg(items):
         msg += "\n📌 SPOT ATUAL E RECORRENTE:\n"
         for item in spot:
             data = formatar_data(item['fu_date'])
-            acao = item['acao'][:60] if item['acao'] else item['status']
+            acao = item['acao'][:60] if item['acao'] else "Sem ação"
             cliente = item['cliente'][:40]
             msg += f"• {data} - {cliente} - {acao}\n"
     
@@ -102,24 +150,31 @@ def gerar_msg(items):
 
 def enviar(msg):
     try:
+        print("2️⃣ Enviando...")
         msg_enc = urllib.parse.quote(msg)
         url = f"https://api.callmebot.com/whatsapp.php?phone={CALLMEBOT_PHONE}&apikey={CALLMEBOT_API_KEY}&text={msg_enc}"
         resp = requests.get(url, timeout=10)
         if resp.status_code == 200:
             print("✅ Enviado!")
         return resp.status_code == 200
-    except:
+    except Exception as e:
+        print(f"❌ Erro envio: {e}")
         return False
 
 print("🚀 Gerando relatório...")
 if not NOTION_TOKEN:
+    print("❌ Token não configurado!")
     exit(1)
 
 items = ler_dados()
 if not items:
+    print("❌ Sem dados")
     exit(0)
 
+print("\n2️⃣ Filtrando...")
 items = filtrar(items)
+
+print("\n3️⃣ Gerando mensagem...")
 msg = gerar_msg(items)
 
 print("\n" + "="*60)
