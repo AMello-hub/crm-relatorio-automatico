@@ -36,7 +36,7 @@ def ler_dados():
 
 def filtrar(items):
     hoje = datetime.now().date()
-    fim = hoje + timedelta(days=30)
+    fim = hoje + timedelta(days=7)
     filtrado = []
     for item in items:
         try:
