@@ -170,8 +170,8 @@ print(msg2)
 print("\nEnviando Parte 1...")
 enviar(msg1, 1)
 
-print("\nAguardando 5 minutos...")
-time.sleep(300)
+print("\nAguardando 1.30 minutos...")
+time.sleep(90)
 
 print("\nEnviando Parte 2...")
 enviar(msg2, 2)
