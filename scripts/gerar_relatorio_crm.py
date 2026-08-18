@@ -37,11 +37,12 @@ def ler_dados():
 def filtrar(items):
     hoje = datetime.now().date()
     fim = hoje + timedelta(days=7)
+    limite_vencidos = hoje - timedelta(days=30)
     filtrado = []
     for item in items:
         try:
             fu = datetime.strptime(item['fu_date'], '%Y-%m-%d').date()
-            if fu <= fim:
+            if limite_vencidos <= fu <= fim:
                 filtrado.append(item)
         except:
             pass
@@ -76,8 +77,8 @@ def gerar_msgs_duas_partes(items):
     spot_only = [i for i in items if categorizar(i['status']) == 'spot_only']
     lead = [i for i in items if categorizar(i['status']) == 'lead']
     
-    primeira_data = datetime.strptime(items[0]['fu_date'], '%Y-%m-%d').date()
-    segunda_dessa = primeira_data - timedelta(days=primeira_data.weekday())
+    hoje = datetime.now().date()
+    segunda_dessa = hoje - timedelta(days=hoje.weekday())
     domingo_dessa = segunda_dessa + timedelta(days=6)
     data_ini = formatar_data(segunda_dessa.isoformat())
     data_fim = formatar_data(domingo_dessa.isoformat())
@@ -124,7 +125,10 @@ def gerar_msgs_duas_partes(items):
         for item in lead:
             data = formatar_data(item['fu_date'])
             cliente = item['cliente'][:30]
-            msg2 += f"* *{data}* - {cliente}\n"
+            hoje = datetime.now().date()
+            fu_date = datetime.strptime(item['fu_date'], '%Y-%m-%d').date()
+            if fu_date <= hoje:
+                msg2 += f"* *{data}* - {cliente}\n"
     
     msg2 += "\n✅ Sincronizado com Notion"
     
@@ -170,8 +174,8 @@ print(msg2)
 print("\nEnviando Parte 1...")
 enviar(msg1, 1)
 
-print("\nAguardando 1.30 minutos...")
-time.sleep(90)
+print("\nAguardando 5 minutos...")
+time.sleep(300)
 
 print("\nEnviando Parte 2...")
 enviar(msg2, 2)
