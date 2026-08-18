@@ -41,7 +41,7 @@ def filtrar(items):
     for item in items:
         try:
             fu = datetime.strptime(item['fu_date'], '%Y-%m-%d').date()
-            if hoje <= fu <= fim:
+            if fu <= fim:
                 filtrado.append(item)
         except:
             pass
