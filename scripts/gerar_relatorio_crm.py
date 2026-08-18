@@ -93,24 +93,21 @@ def gerar_msgs_duas_partes(items):
             cliente = item['cliente'][:30]
             msg1 += f"* *{data}* - {cliente} - {acao}\n"
     
-    spot_p1 = spot[:len(spot)//2]
-    if spot_p1:
-        msg1 += "\n📌 Spot Atual e Recorrente:\n"
-        for item in spot_p1:
-            data = formatar_data(item['fu_date'])
-            acao = item['acao'][:35] if item['acao'] else "Sem acao"
-            cliente = item['cliente'][:30]
-            msg1 += f"* *{data}* - {cliente} - {acao}\n"
-    
+    msg1 += "\n📌 Spot Atual e Recorrente:\n"
     msg2 = ""
-    spot_p2 = spot[len(spot)//2:]
-    if spot_p2:
-        msg2 += "📌 Spot Atual e Recorrente (continuacao):\n"
-        for item in spot_p2:
-            data = formatar_data(item['fu_date'])
-            acao = item['acao'][:35] if item['acao'] else "Sem acao"
-            cliente = item['cliente'][:30]
-            msg2 += f"* *{data}* - {cliente} - {acao}\n"
+    
+    for idx, item in enumerate(spot):
+        data = formatar_data(item['fu_date'])
+        acao = item['acao'][:35] if item['acao'] else "Sem acao"
+        cliente = item['cliente'][:30]
+        linha = f"* *{data}* - {cliente} - {acao}\n"
+        
+        if len(msg1) < len(msg1) + len(linha) and idx < len(spot) // 2:
+            msg1 += linha
+        else:
+            if not msg2:
+                msg2 = "📌 Spot Atual e Recorrente (continuacao):\n"
+            msg2 += linha
     
     if spot_only:
         msg2 += "\n📦 Somente Spot:\n"
@@ -125,7 +122,6 @@ def gerar_msgs_duas_partes(items):
         for item in lead:
             data = formatar_data(item['fu_date'])
             cliente = item['cliente'][:30]
-            hoje = datetime.now().date()
             fu_date = datetime.strptime(item['fu_date'], '%Y-%m-%d').date()
             if fu_date <= hoje:
                 msg2 += f"* *{data}* - {cliente}\n"
@@ -174,8 +170,8 @@ print(msg2)
 print("\nEnviando Parte 1...")
 enviar(msg1, 1)
 
-print("\nAguardando 5 minutos...")
-time.sleep(300)
+print("\nAguardando 90 segundos...")
+time.sleep(90)
 
 print("\nEnviando Parte 2...")
 enviar(msg2, 2)
