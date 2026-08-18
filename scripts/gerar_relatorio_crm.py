@@ -72,59 +72,106 @@ def gerar_msgs_duas_partes(items):
     if not items:
         return "Relatorio CRM\nNenhum Follow Up", ""
     
-    reuniao = [i for i in items if categorizar(i['status']) == 'reuniao']
-    spot = [i for i in items if categorizar(i['status']) == 'spot']
-    spot_only = [i for i in items if categorizar(i['status']) == 'spot_only']
-    lead = [i for i in items if categorizar(i['status']) == 'lead']
-    
     hoje = datetime.now().date()
     segunda_dessa = hoje - timedelta(days=hoje.weekday())
     domingo_dessa = segunda_dessa + timedelta(days=6)
     data_ini = formatar_data(segunda_dessa.isoformat())
     data_fim = formatar_data(domingo_dessa.isoformat())
     
+    reuniao = [i for i in items if categorizar(i['status']) == 'reuniao']
+    spot = [i for i in items if categorizar(i['status']) == 'spot']
+    spot_only = [i for i in items if categorizar(i['status']) == 'spot_only']
+    lead = [i for i in items if categorizar(i['status']) == 'lead']
+    
+    total_clientes = len(reuniao) + len(spot) + len(spot_only) + len(lead)
+    meio = total_clientes // 2
+    
     msg1 = f"📋 Relatorio CRM - Acao Esta Semana ({data_ini}-{data_fim})\n"
+    msg2 = ""
+    
+    contador = 0
+    na_parte2 = False
     
     if reuniao:
-        msg1 += "\n🎯 Reunies, Envios e Follow Ups:\n"
+        if not na_parte2:
+            msg1 += "\n🎯 Reunies, Envios e Follow Ups:\n"
+        else:
+            msg2 += "\n🎯 Reunies, Envios e Follow Ups:\n"
+        
         for item in reuniao:
             data = formatar_data(item['fu_date'])
             acao = item['acao'][:35] if item['acao'] else "Sem acao"
             cliente = item['cliente'][:30]
-            msg1 += f"* *{data}* - {cliente} - {acao}\n"
+            linha = f"* *{data}* - {cliente} - {acao}\n"
+            
+            if not na_parte2 and contador < meio:
+                msg1 += linha
+            else:
+                if not na_parte2:
+                    na_parte2 = True
+                msg2 += linha
+            contador += 1
     
-    msg1 += "\n📌 Spot Atual e Recorrente:\n"
-    msg2 = ""
-    
-    for idx, item in enumerate(spot):
-        data = formatar_data(item['fu_date'])
-        acao = item['acao'][:35] if item['acao'] else "Sem acao"
-        cliente = item['cliente'][:30]
-        linha = f"* *{data}* - {cliente} - {acao}\n"
-        
-        if len(msg1) < len(msg1) + len(linha) and idx < len(spot) // 2:
-            msg1 += linha
+    if spot:
+        if not na_parte2:
+            msg1 += "\n📌 Spot Atual e Recorrente:\n"
         else:
-            if not msg2:
-                msg2 = "📌 Spot Atual e Recorrente (continuacao):\n"
-            msg2 += linha
+            msg2 += "\n📌 Spot Atual e Recorrente:\n"
+        
+        for item in spot:
+            data = formatar_data(item['fu_date'])
+            acao = item['acao'][:35] if item['acao'] else "Sem acao"
+            cliente = item['cliente'][:30]
+            linha = f"* *{data}* - {cliente} - {acao}\n"
+            
+            if not na_parte2 and contador < meio:
+                msg1 += linha
+            else:
+                if not na_parte2:
+                    na_parte2 = True
+                msg2 += linha
+            contador += 1
     
     if spot_only:
-        msg2 += "\n📦 Somente Spot:\n"
+        if not na_parte2:
+            msg1 += "\n📦 Somente Spot:\n"
+        else:
+            msg2 += "\n📦 Somente Spot:\n"
+        
         for item in spot_only:
             data = formatar_data(item['fu_date'])
             acao = item['acao'][:35] if item['acao'] else "Sem acao"
             cliente = item['cliente'][:30]
-            msg2 += f"* *{data}* - {cliente} - {acao}\n"
+            linha = f"* *{data}* - {cliente} - {acao}\n"
+            
+            if not na_parte2 and contador < meio:
+                msg1 += linha
+            else:
+                if not na_parte2:
+                    na_parte2 = True
+                msg2 += linha
+            contador += 1
     
     if lead:
-        msg2 += "\n❌ Lead Perdido:\n"
+        if not na_parte2:
+            msg1 += "\n❌ Lead Perdido:\n"
+        else:
+            msg2 += "\n❌ Lead Perdido:\n"
+        
         for item in lead:
             data = formatar_data(item['fu_date'])
             cliente = item['cliente'][:30]
             fu_date = datetime.strptime(item['fu_date'], '%Y-%m-%d').date()
             if fu_date <= hoje:
-                msg2 += f"* *{data}* - {cliente}\n"
+                linha = f"* *{data}* - {cliente}\n"
+                
+                if not na_parte2 and contador < meio:
+                    msg1 += linha
+                else:
+                    if not na_parte2:
+                        na_parte2 = True
+                    msg2 += linha
+                contador += 1
     
     msg2 += "\n✅ Sincronizado com Notion"
     
