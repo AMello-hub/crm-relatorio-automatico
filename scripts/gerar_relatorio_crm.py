@@ -36,13 +36,16 @@ def ler_dados():
 
 def filtrar(items):
     hoje = datetime.now().date()
-    fim = hoje + timedelta(days=7)
     limite_vencidos = hoje - timedelta(days=30)
+    
+    segunda_dessa = hoje - timedelta(days=hoje.weekday())
+    domingo_dessa = segunda_dessa + timedelta(days=6)
+    
     filtrado = []
     for item in items:
         try:
             fu = datetime.strptime(item['fu_date'], '%Y-%m-%d').date()
-            if limite_vencidos <= fu <= fim:
+            if limite_vencidos <= fu <= domingo_dessa:
                 filtrado.append(item)
         except:
             pass
